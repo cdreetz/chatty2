@@ -1,25 +1,25 @@
 // app/api/route.js
-
 import { ChromaClient } from 'chromadb';
 import { TransformersEmbeddingFunction } from 'chromadb';
 import { encode } from 'gpt-tokenizer';
-import OpenAI from 'openai';
 
 const client = new ChromaClient({ path: "http://34.135.31.176:8000" });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const embedder = new TransformersEmbeddingFunction({ openai_api_key: process.env.OPENAI_API_KEY });
+
 let collection;
 
-const initializeCollection = async () => {
+export const initializeCollection = async () => {
+    console.log("Initializing collection...");
     try {
         collection = await client.getCollection({ name: "assistant_collection_oai69", embeddingFunction: embedder });
+        console.log("Collection initialized successfuly:", collection);
     } catch (error) {
         console.error("Error initializing collection:", error);
     }
 };
-initializeCollection();
+await initializeCollection();
 
-const queryCollection = async (query) => {
+export const queryCollection = async (query) => {
     console.log('Query sent to ChromaDB:', query);
     try {
         const results = await collection.query({
@@ -34,7 +34,7 @@ const queryCollection = async (query) => {
     }
 };
 
-const filterQueryResults = (results, maxPromptLength = 3900) => {
+export const filterQueryResults = (results, maxPromptLength = 3900) => {
     if (!results || !Array.isArray(results.documents) || results.documents.length === 0) {
         console.error('Results do not have the expected structure:', results);
         return { contexts: [] };
@@ -59,7 +59,7 @@ const filterQueryResults = (results, maxPromptLength = 3900) => {
     return { contexts };
 };
 
-const buildPrompt = (query, contexts) => {
+export const buildPrompt = (query, contexts) => {
     const system = {
         role: 'system',
         content: 'You are to play the part of a personal assistant...'
@@ -71,37 +71,4 @@ const buildPrompt = (query, contexts) => {
     return [system, user];
 };
 
-const getChatGPTResponse = async (query, contexts) => {
-    const messages = buildPrompt(query, contexts);
-    try {
-        const response = await openai.chat.completions.create({
-            model: "gpt-4",
-            messages: messages,
-        });
-        return response.choices[0].message.content.trim();
-    } catch (error) {
-        console.error("Error getting GPT response:", error);
-        throw error;
-    }
-};
 
-export default async (req, res) => {
-    await initializeCollection();
-
-    if (req.method === 'POST') {
-        const { query } = req.body;
-
-        try {
-            const nestedDocuments = await queryCollection(query);
-            const documents = nestedDocuments.flat();
-            const { contexts } = filterQueryResults({ documents: [documents] });
-            const gptResponse = await getChatGPTResponse(query, contexts);
-            res.status(200).json({ response: gptResponse });
-        } catch (error) {
-            console.error(error);
-            res.status(500).send('Internal Server Error');
-        }
-    } else {
-        res.status(405).send('Method Not Allowed');
-    }
-};
